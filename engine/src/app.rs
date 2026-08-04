@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use log::error;
-use shipyard::World;
+use shipyard::{Workload, World};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
 use crate::args::Args;
+use crate::gui::{self, Gui};
+use crate::profiler::{self, CPUProfiling, FrameTimings};
 use crate::renderer::{RenderError, Renderer};
 
 struct App {
@@ -44,21 +46,47 @@ impl App {
         );
         self.world
             .run_with_data(Renderer::setup, (window.clone(), !self.args.no_vsync))?;
+        self.world
+            .run_with_data(Gui::setup, self.args.title.clone());
+        self.world.run(CPUProfiling::setup);
+        self.world.run(FrameTimings::setup);
+        Workload::new(gui::UI)
+            .with_system(gui::draw::<FrameTimings>)
+            .with_barrier()
+            .with_system(gui::end_frame)
+            .add_to_world(&self.world)?;
+
         self.window = Some(window);
         Ok(())
     }
 
     /// One iteration of the frame loop: acquire, user hook, present.
     fn frame(&mut self) -> Result<()> {
-        match self.world.run(Renderer::acquire_frame) {
-            Ok(()) => {}
-            Err(RenderError::Reconfigured | RenderError::Unavailable) => return Ok(()),
-            Err(e) => return Err(e.into()),
+        {
+            puffin::profile_scope!("acquire");
+            match self.world.run(Renderer::acquire_frame) {
+                Ok(()) => {}
+                Err(RenderError::Reconfigured | RenderError::Unavailable) => return Ok(()),
+                Err(e) => return Err(e.into()),
+            }
         }
 
-        (self.on_frame)(&self.world);
+        {
+            puffin::profile_scope!("on_frame");
+            (self.on_frame)(&self.world);
+        }
 
-        self.world.run(Renderer::present)?;
+        {
+            puffin::profile_scope!("present");
+            self.world.run(Renderer::present)?;
+        }
+
+        self.world.run(profiler::sample);
+
+        {
+            puffin::profile_scope!("ui");
+            self.world.run_workload(gui::UI)?;
+        }
         Ok(())
     }
 }
@@ -102,12 +130,6 @@ impl ApplicationHandler for App {
 }
 
 /// Runs the engine: opens the window and starts the frame loop.
-///
-/// Every frame the engine acquires the surface texture, inserts it into the
-/// world as a [`Frame`] unique, and calls `on_frame` — that is where you run
-/// your shipyard workloads; they can render into the frame via
-/// `UniqueView<Frame>`. When the hook returns, the engine presents. The
-/// engine runs no workloads on its own. Returns when the window is closed.
 pub fn run(args: Args, world: World, on_frame: impl FnMut(&World) + 'static) -> Result<()> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
