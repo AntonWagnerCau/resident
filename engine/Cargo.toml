@@ -1,0 +1,15 @@
+[package]
+name = "resident-engine"
+description = "Minimal game engine: wgpu 30 + shipyard ECS + winit"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+log.workspace = true
+pollster.workspace = true
+shipyard.workspace = true
+thiserror.workspace = true
+wgpu.workspace = true
+winit.workspace = true
