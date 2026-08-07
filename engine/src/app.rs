@@ -12,8 +12,9 @@ use winit::window::{Window, WindowId};
 
 use crate::args::Args;
 use crate::gui::{self, Gui};
-use crate::profiler::{self, CPUProfiling, FrameTimings};
+use crate::profiler::{self, CPUProfiling, FrameTimings, GpuProfiler};
 use crate::renderer::{RenderError, Renderer};
+use resident_profiler::puffin;
 
 struct App {
     args: Args,
@@ -50,8 +51,10 @@ impl App {
             .run_with_data(Gui::setup, self.args.title.clone());
         self.world.run(CPUProfiling::setup);
         self.world.run(FrameTimings::setup);
+        self.world.run(GpuProfiler::setup);
         Workload::new(gui::UI)
             .with_system(gui::draw::<FrameTimings>)
+            .with_system(gui::draw::<GpuProfiler>)
             .with_barrier()
             .with_system(gui::end_frame)
             .add_to_world(&self.world)?;
@@ -62,6 +65,7 @@ impl App {
 
     /// One iteration of the frame loop: acquire, user hook, present.
     fn frame(&mut self) -> Result<()> {
+        self.world.run(profiler::begin_gpu_frame);
         {
             puffin::profile_scope!("acquire");
             match self.world.run(Renderer::acquire_frame) {
@@ -75,6 +79,8 @@ impl App {
             puffin::profile_scope!("on_frame");
             (self.on_frame)(&self.world);
         }
+
+        self.world.run(profiler::end_gpu_frame);
 
         {
             puffin::profile_scope!("present");

@@ -1,4 +1,4 @@
-//! Frame timing: what the last frame cost, measured with puffin.
+//! CPU frame timing: what the last frame cost, measured with puffin.
 
 use std::borrow::Cow;
 use std::time::Instant;
@@ -7,10 +7,7 @@ use puffin::{GlobalFrameView, GlobalProfiler};
 use shipyard::{AllStoragesViewMut, Unique, UniqueView, UniqueViewMut};
 use w_gui::{AccentColor, Context};
 
-use crate::gui::Panel;
-
-/// Frames kept for the history plot.
-const HISTORY: usize = 240;
+use crate::{push, SECTION_ACCENTS};
 
 /// Weight of the newest sample in the smoothed frame time.
 const SMOOTHING: f32 = 0.1;
@@ -18,19 +15,12 @@ const SMOOTHING: f32 = 0.1;
 /// Frames puffin retains
 const RECENT_FRAMES: usize = 2;
 
-const SECTION_ACCENTS: [AccentColor; 4] = [
-    AccentColor::Coral,
-    AccentColor::Teal,
-    AccentColor::Blue,
-    AccentColor::Purple,
-];
-
 /// Puffin's window onto the frames it has closed.
 #[derive(Unique)]
 pub struct CPUProfiling(GlobalFrameView);
 
 impl CPUProfiling {
-    pub(crate) fn setup(storages: AllStoragesViewMut) {
+    pub fn setup(storages: AllStoragesViewMut) {
         puffin::set_scopes_on(true);
         let view = GlobalFrameView::default();
         {
@@ -51,7 +41,7 @@ pub struct FrameTimings {
     smoothed_ms: f32,
     /// Duration of the last frame in ms, as measured by puffin.
     frame_ms: f32,
-    /// FPS per frame, oldest first, at most [`HISTORY`] long.
+    /// FPS per frame, oldest first, at most [`HISTORY`](crate::HISTORY) long.
     fps_history: Vec<f32>,
     /// Puffin frame duration per frame, aligned with `fps_history`.
     frame_ms_history: Vec<f32>,
@@ -60,7 +50,7 @@ pub struct FrameTimings {
 }
 
 impl FrameTimings {
-    pub(crate) fn setup(storages: AllStoragesViewMut) {
+    pub fn setup(storages: AllStoragesViewMut) {
         storages.add_unique(Self::default());
     }
 
@@ -82,64 +72,9 @@ impl FrameTimings {
     pub fn sections(&self) -> impl Iterator<Item = (&str, f32)> {
         self.sections.iter().map(|(name, ms)| (name.as_ref(), *ms))
     }
-}
 
-/// Closes the puffin frame and records what it cost.
-pub(crate) fn sample(
-    mut timings: UniqueViewMut<FrameTimings>,
-    profiling: UniqueView<CPUProfiling>,
-) {
-    GlobalProfiler::lock().new_frame();
-
-    let now = Instant::now();
-    let Some(last) = timings.last.replace(now) else {
-        return;
-    };
-
-    let wall_ms = (now - last).as_secs_f32() * 1000.0;
-    timings.smoothed_ms = if timings.smoothed_ms > 0.0 {
-        timings.smoothed_ms + (wall_ms - timings.smoothed_ms) * SMOOTHING
-    } else {
-        wall_ms
-    };
-    let fps = if wall_ms > 0.0 { 1000.0 / wall_ms } else { 0.0 };
-    push(&mut timings.fps_history, fps);
-
-    let frames = profiling.0.lock();
-    let Some(frame) = frames.latest_frame() else {
-        return;
-    };
-
-    let unpacked = match frame.unpacked() {
-        Ok(unpacked) => unpacked,
-        Err(_) => return,
-    };
-
-    timings.frame_ms = unpacked.duration_ns() as f32 / 1e6;
-    timings.sections.clear();
-    for stream in unpacked.thread_streams.values() {
-        let Ok(scopes) = puffin::Reader::from_start(&stream.stream).read_top_scopes() else {
-            continue;
-        };
-        for scope in scopes {
-            let name = frames
-                .scope_collection()
-                .fetch_by_id(&scope.id)
-                .map_or(Cow::Borrowed("unknown"), |details| details.name().clone());
-            let ms = scope.record.duration_ns as f32 / 1e6;
-            match timings.sections.iter_mut().find(|(n, _)| *n == name) {
-                Some((_, total)) => *total += ms,
-                None => timings.sections.push((name, ms)),
-            }
-        }
-    }
-
-    let frame_ms = timings.frame_ms;
-    push(&mut timings.frame_ms_history, frame_ms);
-}
-
-impl Panel for FrameTimings {
-    fn create_ui(&self, ui: &mut Context) {
+    /// Draws the "Performance" window in the debug UI.
+    pub fn ui(&self, ui: &mut Context) {
         // Nothing to show until the first frame has been sampled.
         if self.fps_history.is_empty() {
             return;
@@ -214,11 +149,55 @@ impl Panel for FrameTimings {
     }
 }
 
-fn push(history: &mut Vec<f32>, value: f32) {
-    if history.len() == HISTORY {
-        history.remove(0);
+/// Closes the puffin frame and records what it cost.
+pub fn sample(mut timings: UniqueViewMut<FrameTimings>, profiling: UniqueView<CPUProfiling>) {
+    GlobalProfiler::lock().new_frame();
+
+    let now = Instant::now();
+    let Some(last) = timings.last.replace(now) else {
+        return;
+    };
+
+    let wall_ms = (now - last).as_secs_f32() * 1000.0;
+    timings.smoothed_ms = if timings.smoothed_ms > 0.0 {
+        timings.smoothed_ms + (wall_ms - timings.smoothed_ms) * SMOOTHING
+    } else {
+        wall_ms
+    };
+    let fps = if wall_ms > 0.0 { 1000.0 / wall_ms } else { 0.0 };
+    push(&mut timings.fps_history, fps);
+
+    let frames = profiling.0.lock();
+    let Some(frame) = frames.latest_frame() else {
+        return;
+    };
+
+    let unpacked = match frame.unpacked() {
+        Ok(unpacked) => unpacked,
+        Err(_) => return,
+    };
+
+    timings.frame_ms = unpacked.duration_ns() as f32 / 1e6;
+    timings.sections.clear();
+    for stream in unpacked.thread_streams.values() {
+        let Ok(scopes) = puffin::Reader::from_start(&stream.stream).read_top_scopes() else {
+            continue;
+        };
+        for scope in scopes {
+            let name = frames
+                .scope_collection()
+                .fetch_by_id(&scope.id)
+                .map_or(Cow::Borrowed("unknown"), |details| details.name().clone());
+            let ms = scope.record.duration_ns as f32 / 1e6;
+            match timings.sections.iter_mut().find(|(n, _)| *n == name) {
+                Some((_, total)) => *total += ms,
+                None => timings.sections.push((name, ms)),
+            }
+        }
     }
-    history.push(value);
+
+    let frame_ms = timings.frame_ms;
+    push(&mut timings.frame_ms_history, frame_ms);
 }
 
 fn accent_for(fps: f32) -> AccentColor {

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["app", "engine"]
+members = ["app", "engine", "gpu", "profiler"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,7 +12,9 @@ clap = { version = "4", features = ["derive"] }
 env_logger = "0.11"
 log = "0.4"
 pollster = "1"
+puffin = "0.20.0"
 shipyard = "0.11"
 thiserror = "2"
+w-gui = "0.22.41"
 wgpu = "30"
 winit = "0.30"

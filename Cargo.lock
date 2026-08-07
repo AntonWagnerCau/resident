@@ -1859,12 +1859,33 @@ dependencies = [
  "clap",
  "log",
  "pollster",
- "puffin",
+ "resident-gpu",
+ "resident-profiler",
  "shipyard",
  "thiserror 2.0.19",
  "w-gui",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "resident-gpu"
+version = "0.1.0"
+dependencies = [
+ "shipyard",
+ "wgpu",
+]
+
+[[package]]
+name = "resident-profiler"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "puffin",
+ "resident-gpu",
+ "shipyard",
+ "w-gui",
+ "wgpu",
 ]
 
 [[package]]

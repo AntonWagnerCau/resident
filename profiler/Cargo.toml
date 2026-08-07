@@ -1,0 +1,13 @@
+[package]
+name = "resident-profiler"
+description = "Frame profiling: puffin CPU scopes + arbitrary GPU timestamps"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+log.workspace = true
+puffin.workspace = true
+resident-gpu = { path = "../gpu" }
+shipyard.workspace = true
+w-gui.workspace = true
+wgpu.workspace = true

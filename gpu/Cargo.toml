@@ -1,0 +1,9 @@
+[package]
+name = "resident-gpu"
+description = "Shared GPU state: the wgpu device and queue"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+shipyard.workspace = true
+wgpu.workspace = true

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use resident_gpu::GpuContext;
 use shipyard::{AllStoragesViewMut, Unique, UniqueView, UniqueViewMut};
 use winit::window::Window;
 
@@ -67,9 +68,13 @@ impl Renderer {
         }))
         .context("no suitable GPU adapter found")?;
 
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-                .context("failed to create device")?;
+        // Timestamp queries are optional: request them only when the adapter has them.
+        let required_features = adapter.features() & wgpu::Features::TIMESTAMP_QUERY;
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            required_features,
+            ..Default::default()
+        }))
+        .context("failed to create device")?;
 
         let mut config = surface
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
@@ -79,6 +84,7 @@ impl Renderer {
         }
         surface.configure(&device, &config);
 
+        storages.add_unique(GpuContext::new(device.clone(), queue.clone()));
         storages.add_unique(Self {
             surface,
             device,

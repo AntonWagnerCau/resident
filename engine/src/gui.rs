@@ -22,6 +22,18 @@ pub trait Panel {
     fn create_ui(&self, ui: &mut Context);
 }
 
+impl Panel for resident_profiler::FrameTimings {
+    fn create_ui(&self, ui: &mut Context) {
+        self.ui(ui);
+    }
+}
+
+impl Panel for resident_profiler::GpuProfiler {
+    fn create_ui(&self, ui: &mut Context) {
+        self.ui(ui);
+    }
+}
+
 /// Draws the panel held by the unique `P`.
 pub fn draw<P: Panel + Unique + Send + Sync>(mut gui: UniqueViewMut<Gui>, panel: UniqueView<P>) {
     panel.create_ui(&mut gui.0);

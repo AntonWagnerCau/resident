@@ -9,9 +9,10 @@ anyhow.workspace = true
 clap.workspace = true
 log.workspace = true
 pollster.workspace = true
-puffin = "0.20.0"
+resident-gpu = { path = "../gpu" }
+resident-profiler = { path = "../profiler" }
 shipyard.workspace = true
 thiserror.workspace = true
-w-gui = "0.22.41"
+w-gui.workspace = true
 wgpu.workspace = true
 winit.workspace = true
